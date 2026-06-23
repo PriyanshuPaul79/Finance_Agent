@@ -7,7 +7,8 @@ class DueDiligenceState(TypedDict):
     
     # The target stock ticker (e.g., "AAPL")
     ticker: str
-    
+    llm_provider: str  # "openai", "groq", or "gemini"
+    api_key:str
     # Routing & Completion Flags
     fundamentals_done: bool
     sentiment_done: bool
@@ -20,3 +21,4 @@ class DueDiligenceState(TypedDict):
     
     # Final synthesized report
     final_report: Optional[str]
+    next_agent: str
