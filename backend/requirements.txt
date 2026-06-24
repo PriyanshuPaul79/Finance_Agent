@@ -5,5 +5,9 @@ langgraph
 langchain-core
 langchain-openai
 yfinance
-duckduckgo-search
+pandas
+ddgs
 sse-starlette
+langchain-community
+langchain-groq
+langchain-google-genai
