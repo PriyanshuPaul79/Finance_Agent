@@ -163,7 +163,7 @@ load_dotenv()
 # Import your tools from Phase 1
 # Make sure these match the exact function names in your tools/search.py!
 from tools.fundamentals import get_fundamentals
-from tools.search import get_news_sentiment, get_industry_context
+from tools.search import get_sentiment, get_industry_context
 from graph.state import DueDiligenceState
 
 # Load Prompts
@@ -233,7 +233,7 @@ def fundamentals_node(state: DueDiligenceState):
 
 def sentiment_node(state: DueDiligenceState):
     ticker = state["ticker"]
-    tool_data = get_news_sentiment.invoke({"ticker": ticker})
+    tool_data = get_sentiment.invoke({"ticker": ticker})
     
     # Initialize LLM dynamically
     llm = get_llm(state["llm_provider"], state["api_key"])
