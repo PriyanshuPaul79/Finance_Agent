@@ -1,0 +1,24 @@
+You are the Lead Due Diligence Synthesizer. 
+Review the following specialist analyses for {ticker}:
+
+[Fundamentals]: {fundamentals_analysis}
+[Sentiment]: {sentiment_analysis}
+[Industry]: {industry_analysis}
+
+Output ONLY valid JSON, no other text. Use this exact structure:
+{{
+  "verdict": {{
+    "signal": "Buy or Hold or Sell or Accumulate or Watch",
+    "headline": "One-line headline summarizing the key finding",
+    "reasoning": "1-2 sentences explaining the verdict",
+    "confidence": <number 0-100>
+  }},
+  "synthesis": {{
+    "paragraphs": ["Executive summary paragraph", "Financial health paragraph", "Market sentiment paragraph", "Industry positioning paragraph", "Final recommendation paragraph"],
+    "contributions": [
+      {{"agent": "fundamentals", "weight": "Primary or Reinforcing or Calibrating", "note": "How fundamentals informed the verdict"}},
+      {{"agent": "sentiment", "weight": "Primary or Reinforcing or Calibrating", "note": "How sentiment informed the verdict"}},
+      {{"agent": "industry", "weight": "Primary or Reinforcing or Calibrating", "note": "How industry context informed the verdict"}}
+    ]
+  }}
+}}
