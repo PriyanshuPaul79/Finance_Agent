@@ -1,0 +1,336 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* =========================================================================
+   Dossier design system
+   - ink      #15171C  warm near-black, primary text + dark surfaces
+   - paper    #F7F5F0  warm off-white background, the dossier page
+   - signal   #D9622B  burnt-amber accent — the ONE bright color, used rarely
+   - verified #3F6F52  muted forest green — complete/positive states
+   - caution  #A33B3B  muted brick red — risk/negative states
+   - wire     #C9C2B4  warm gray-beige hairlines, dividers, borders
+   No blue. No purple. No gradients. No glassmorphism.
+   ========================================================================= */
+
+@theme inline {
+  /* Color tokens — exposed as Tailwind utilities (bg-paper, text-ink, etc.) */
+  --color-ink: #15171c;
+  --color-ink-soft: #3a3d44; /* secondary body text on paper */
+  --color-ink-mute: #6b6a64; /* tertiary / metadata on paper */
+  --color-paper: #f7f5f0;
+  --color-paper-2: #efebe2; /* slightly darker paper for inset cards */
+  --color-paper-3: #e6e1d4; /* hover/active paper */
+  --color-signal: #d9622b;
+  --color-signal-deep: #b14d1f; /* AA-safe on paper for text */
+  --color-verified: #3f6f52;
+  --color-verified-deep: #2f5440;
+  --color-caution: #a33b3b;
+  --color-caution-deep: #7e2c2c;
+  --color-wire: #c9c2b4;
+  --color-wire-soft: #ddd7c8;
+
+  /* Font roles */
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-serif), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  /* shadcn aliases — wire everything to the dossier palette so existing
+     shadcn components inherit the right look without per-component overrides */
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-card: #ffffff;
+  --color-card-foreground: var(--color-ink);
+  --color-popover: #ffffff;
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-ink);
+  --color-primary-foreground: var(--color-paper);
+  --color-secondary: var(--color-paper-2);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-paper-2);
+  --color-muted-foreground: var(--color-ink-soft);
+  --color-accent: var(--color-paper-3);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-caution);
+  --color-border: var(--color-wire);
+  --color-input: var(--color-wire);
+  --color-ring: var(--color-signal);
+
+  /* Chart colors — wired to the palette so recharts uses dossier tones */
+  --color-chart-1: var(--color-signal);
+  --color-chart-2: var(--color-verified);
+  --color-chart-3: var(--color-ink-soft);
+  --color-chart-4: var(--color-wire);
+  --color-chart-5: var(--color-caution);
+
+  --color-sidebar: var(--color-paper);
+  --color-sidebar-foreground: var(--color-ink);
+  --color-sidebar-primary: var(--color-ink);
+  --color-sidebar-primary-foreground: var(--color-paper);
+  --color-sidebar-accent: var(--color-paper-2);
+  --color-sidebar-accent-foreground: var(--color-ink);
+  --color-sidebar-border: var(--color-wire);
+  --color-sidebar-ring: var(--color-signal);
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+}
+
+:root {
+  --radius: 4px;
+}
+
+@layer base {
+  * {
+    @apply border-wire;
+    border-color: var(--color-wire);
+  }
+
+  /* Visible keyboard focus on every interactive element */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+    border-radius: 1px;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* The dossier spine — a persistent vertical rule */
+  .spine-rule {
+    background-color: var(--color-wire);
+  }
+
+  /* Monospace data treatment: tabular numbers + slight tracking */
+  .font-mono,
+  [class*="font-mono"] {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Display serif treatment for headlines */
+  .font-serif {
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+  }
+
+  /* Hairline divider used between spine-attached sections */
+  .hairline {
+    border-top: 1px solid var(--color-wire);
+  }
+
+  /* The "case file" eyebrow label */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-ink-mute);
+  }
+}
+
+/* =========================================================================
+   Agent spine — node states
+   The signature element. Each node has a hollow (queued), active (signal),
+   complete (verified), and error (caution) state.
+   ========================================================================= */
+
+.spine-node {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-paper);
+  border: 1.5px solid var(--color-wire);
+  transition: background-color 220ms ease, border-color 220ms ease,
+    box-shadow 220ms ease;
+  flex-shrink: 0;
+}
+
+.spine-node--active {
+  background: var(--color-signal);
+  border-color: var(--color-signal);
+  box-shadow: 0 0 0 4px rgba(217, 98, 43, 0.14);
+}
+
+.spine-node--complete {
+  background: var(--color-verified);
+  border-color: var(--color-verified);
+}
+
+.spine-node--error {
+  background: var(--color-caution);
+  border-color: var(--color-caution);
+}
+
+.spine-node--synthesizing {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+}
+
+/* Spine connecting line */
+.spine-line {
+  background-color: var(--color-wire);
+  width: 1.5px;
+  flex-shrink: 0;
+}
+
+/* Subtle pulse reserved only for the active (currently-running) node */
+@keyframes spine-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(217, 98, 43, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(217, 98, 43, 0.06);
+  }
+}
+
+.spine-node--active {
+  animation: spine-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spine-node,
+  .spine-node--active,
+  .spine-node--complete,
+  .spine-node--error,
+  .spine-node--synthesizing {
+    animation: none !important;
+    transition: background-color 80ms linear, border-color 80ms linear;
+  }
+}
+
+/* =========================================================================
+   Spine convergence — the ONE orchestrated motion moment.
+   When synthesis completes, the three agent connector lines visually
+   draw together into the verdict card. Implemented as SVG path stroke-dash
+   animation; falls back to a fade when reduced motion is requested.
+   ========================================================================= */
+
+.convergence-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 900ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.convergence-path--drawn {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .convergence-path {
+    transition: opacity 400ms ease;
+    stroke-dashoffset: 0;
+    stroke-dasharray: none;
+    opacity: 0;
+  }
+  .convergence-path--drawn {
+    opacity: 1;
+  }
+}
+
+/* Live transcript lines fade in as agents stream reasoning */
+@keyframes transcript-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.transcript-line {
+  animation: transcript-in 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transcript-line {
+    animation: none;
+  }
+}
+
+/* Subtle caret for the active agent's transcript line */
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.transcript-caret {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  background: var(--color-signal);
+  margin-left: 4px;
+  vertical-align: -2px;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transcript-caret {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* Skeleton shimmer — for the dashboard history list */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.skeleton-dossier {
+  background: linear-gradient(
+    90deg,
+    var(--color-paper-2) 0px,
+    var(--color-paper-3) 200px,
+    var(--color-paper-2) 400px
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-dossier {
+    animation: none;
+    background: var(--color-paper-2);
+  }
+}
+
+/* Custom scrollbar for long agent transcripts / findings */
+.scroll-dossier {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-wire) transparent;
+}
+.scroll-dossier::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-dossier::-webkit-scrollbar-thumb {
+  background: var(--color-wire);
+  border-radius: 999px;
+}
+.scroll-dossier::-webkit-scrollbar-track {
+  background: transparent;
+}
