@@ -115,14 +115,14 @@ export function ArchitectureView() {
       <section className="py-10 border-t border-wire">
         <p className="eyebrow mb-5">Source</p>
         <a
-          href="https://github.com"
+          href="https://github.com/PriyanshuPaul79/Finance_Agent"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-3 border border-wire hover:border-ink px-5 py-3 transition-colors group"
         >
           <Github className="w-5 h-5 text-ink" />
           <span className="font-mono text-[13px] text-ink">
-            github.com/your-handle/Verdikt
+            PriyanshuPaul79/Finance_Agent
           </span>
           <ArrowRight className="w-4 h-4 text-ink-mute group-hover:text-ink group-hover:translate-x-0.5 transition-all" />
         </a>
