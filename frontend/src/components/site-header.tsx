@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter, type ViewKind } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 // ============================================================================
 // SiteHeader — sticky top nav.
@@ -28,8 +29,10 @@ export function SiteHeader() {
     return () => window.removeEventListener("hashchange", onHash);
   }, [syncFromHash]);
 
+// border-b border-wire
+
   return (
-    <header className="sticky top-0 z-40 bg-paper/95 backdrop-blur-[6px] border-b border-wire">
+    <header className="sticky top-0 z-40 bg-paper/95 backdrop-blur-[6px] border-b  ">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
@@ -39,10 +42,7 @@ export function SiteHeader() {
             aria-label="Dossier home"
           >
             <span className="font-serif text-xl sm:text-2xl font-semibold text-ink tracking-tight">
-              Verdikt
-            </span>
-            <span className="hidden sm:inline font-mono text-[10px] uppercase tracking-[0.18em] text-ink-mute">
-              AI Due Diligence
+              <Image src="/verdikt_2.svg" alt="" width={200} height={200} />
             </span>
           </button>
 
