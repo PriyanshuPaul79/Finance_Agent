@@ -9,7 +9,7 @@
 import { NextRequest } from "next/server";
 
 const BACKEND_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
