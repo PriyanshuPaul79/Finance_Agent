@@ -2,7 +2,7 @@ import type { AnalysisEvent, AnalysisReport } from "./types";
 
 // NEXT_PUBLIC_ variables are inlined into the client bundle at build time.
 // This file only ever runs in the browser (called from the Zustand store).
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
 const ANALYZE_URL = `${BACKEND_URL}/analyze`;
 
 export interface StreamOptions {
