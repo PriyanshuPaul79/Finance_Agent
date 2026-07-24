@@ -5,6 +5,7 @@ from graph.nodes import (
     fundamentals_node,
     sentiment_node,
     industry_node,
+    technical_node,
     synthesis_node
 )
 
@@ -16,6 +17,7 @@ workflow.add_node("Supervisor", supervisor_node)
 workflow.add_node("FundamentalsAnalyst", fundamentals_node)
 workflow.add_node("SentimentAnalyst", sentiment_node)
 workflow.add_node("IndustryAnalyst", industry_node)
+workflow.add_node("TechnicalAnalyst", technical_node)
 workflow.add_node("Synthesizer", synthesis_node)
 
 # 3. Set Entry Point
@@ -33,6 +35,7 @@ workflow.add_conditional_edges(
         "FundamentalsAnalyst": "FundamentalsAnalyst",
         "SentimentAnalyst": "SentimentAnalyst",
         "IndustryAnalyst": "IndustryAnalyst",
+        "TechnicalAnalyst": "TechnicalAnalyst",
         "FINISH": "Synthesizer"
     }
 )
@@ -41,6 +44,7 @@ workflow.add_conditional_edges(
 workflow.add_edge("FundamentalsAnalyst", "Supervisor")
 workflow.add_edge("SentimentAnalyst", "Supervisor")
 workflow.add_edge("IndustryAnalyst", "Supervisor")
+workflow.add_edge("TechnicalAnalyst", "Supervisor")
 
 # 6. Define End edge
 workflow.add_edge("Synthesizer", END)
