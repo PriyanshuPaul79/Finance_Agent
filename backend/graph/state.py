@@ -13,11 +13,13 @@ class DueDiligenceState(TypedDict):
     fundamentals_done: bool
     sentiment_done: bool
     industry_done: bool
+    technical_done: bool
     
     # Storage for worker outputs
     fundamentals_analysis: Optional[str]
     sentiment_analysis: Optional[str]
     industry_analysis: Optional[str]
+    technical_analysis: Optional[str]
     
     # Final synthesized report
     final_report: Optional[str]
