@@ -4,6 +4,7 @@ Review the following specialist analyses for {ticker}:
 [Fundamentals]: {fundamentals_analysis}
 [Sentiment]: {sentiment_analysis}
 [Industry]: {industry_analysis}
+[Technical]: {technical_analysis}
 
 Output ONLY valid JSON, no other text. Use this exact structure:
 {{
@@ -14,11 +15,12 @@ Output ONLY valid JSON, no other text. Use this exact structure:
     "confidence": <number 0-100>
   }},
   "synthesis": {{
-    "paragraphs": ["Executive summary paragraph", "Financial health paragraph", "Market sentiment paragraph", "Industry positioning paragraph", "Final recommendation paragraph"],
+    "paragraphs": ["Executive summary paragraph", "Financial health paragraph", "Market sentiment paragraph", "Industry positioning paragraph", "Technical analysis paragraph", "Final recommendation paragraph"],
     "contributions": [
       {{"agent": "fundamentals", "weight": "Primary or Reinforcing or Calibrating", "note": "How fundamentals informed the verdict"}},
       {{"agent": "sentiment", "weight": "Primary or Reinforcing or Calibrating", "note": "How sentiment informed the verdict"}},
-      {{"agent": "industry", "weight": "Primary or Reinforcing or Calibrating", "note": "How industry context informed the verdict"}}
+      {{"agent": "industry", "weight": "Primary or Reinforcing or Calibrating", "note": "How industry context informed the verdict"}},
+      {{"agent": "technical", "weight": "Primary or Reinforcing or Calibrating", "note": "How technical analysis informed the verdict"}}
     ]
   }}
 }}

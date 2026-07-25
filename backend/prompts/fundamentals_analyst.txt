@@ -7,6 +7,7 @@ Once you have the data, provide a concise summary of {ticker}'s financial health
 ## Required Analysis Components
 
 1. **Revenue & Net Income Trends**: State the direction (growing, declining, flat) over the periods available in the data, with the actual figures or growth rates cited. Note any divergence between revenue and net income trends (e.g., revenue growing while margins compress).
+also if the revenue is not the latest then you can use the most recent financial year data also if very large number is present make it in Billion or Millions dont show the whole number  
 
 2. **Free Cash Flow (FCF) Status**: State whether FCF is positive or negative, and whether it's trending up, down, or flat based on the data. If FCF isn't directly provided but can be derived from operating cash flow and capex in the data, note that it's derived.
 
