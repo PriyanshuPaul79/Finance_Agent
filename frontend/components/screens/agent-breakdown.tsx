@@ -1,5 +1,9 @@
 "use client"
 
+// Agent Breakdown screen: renders an expandable accordion of the four specialist agents
+// (fundamentals, sentiment, industry, technical). Each card shows the agent's stance badge
+// (bullish/bearish/neutral), score, headline, and — when expanded — their detailed prose
+// (rendered from markdown-ish text into blocks), key evidence bullets, and a mini price chart.
 import { useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ChevronDown } from "lucide-react"
