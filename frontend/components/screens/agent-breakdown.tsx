@@ -5,6 +5,8 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ChevronDown } from "lucide-react"
 import { AGENTS, type AgentId, type StockAnalysis } from "@/lib/verdikt-data"
 import { MiniChart } from "@/components/mini-chart"
+  // these are the props for the AgentBreakdown component
+
 
 interface AgentBreakdownProps {
   analysis: StockAnalysis
@@ -15,6 +17,9 @@ const STANCE_LABEL: Record<string, { text: string; cls: string }> = {
   bearish: { text: "Bearish", cls: "text-destructive border-destructive/40 bg-destructive/10" },
   neutral: { text: "Neutral", cls: "text-slate border-slate/40 bg-slate/10" },
 }
+
+
+
 
 // Renders markdown-lite inline styles: **bold**, *italic*, `code`
 function InlineText({ text }: { text: string }): ReactNode {
