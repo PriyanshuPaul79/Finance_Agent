@@ -1,5 +1,9 @@
 "use client"
 
+// Results screen: top-level container shown after analysis completes. Holds a tab bar (Verdict,
+// Breakdown, Disagreement, Report) plus a "New analysis" reset button, and renders the active
+// section inside a motion crossfade. Dispatches to VerdictSummary, AgentBreakdown, DebateView,
+// and FinalReport based on the selected tab.
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { RotateCcw } from "lucide-react"
