@@ -1,5 +1,9 @@
 "use client"
 
+// Debate View screen: surfaces where two agents materially disagreed. Renders a no-disagreement
+// "aligned" state when the debate is absent, otherwise displays the two clashing claims as
+// colliding bubbles, the step-by-step reasoning trail that led to the clash, and the lead
+// synthesizer's final reconciliation. Includes a small Speaker subcomponent for agent avatars.
 import { motion, useReducedMotion } from "motion/react"
 import { Zap, Check } from "lucide-react"
 import { AGENTS, type StockAnalysis } from "@/lib/verdikt-data"
