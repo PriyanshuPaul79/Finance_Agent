@@ -1,5 +1,9 @@
 "use client"
 
+// Final Report screen: the printable one-pager summary. Displays the company header with verdict
+// and confidence, the investment thesis, side-by-side bull/bear cases, and a grid scorecard of
+// every agent's score. The "Export one-pager" button shows a progress animation then triggers
+// window.print() so the user can save the report as PDF (the terminal/button are hidden in print).
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { FileDown, Check, Loader2, TrendingUp, TrendingDown } from "lucide-react"
