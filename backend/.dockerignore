@@ -1,0 +1,25 @@
+# Version Control
+.git
+.gitignore
+
+# IDE / Editor folders
+.idea/
+.vscode/
+.devcontainer/
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.tox/
+
+# Local Streamlit and cache files
+.streamlit/
+cache/
+*.json
+
+# OS specific files
+.DS_Store
+Thumbs.db
