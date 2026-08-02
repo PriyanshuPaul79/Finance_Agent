@@ -1,5 +1,9 @@
 "use client"
 
+// Verdict summary screen: the first tab after analysis completes. Left column shows a PulseRing
+// with the verdict, a RadialMeter of confidence, and per-agent score chips; right column shows the
+// verdict headline, the thesis paragraph, price/change/confidence stats, and a button to advance
+// to the per-agent breakdown.
 import { motion } from "motion/react"
 import { ArrowRight } from "lucide-react"
 import { AGENTS, type AgentId, type StockAnalysis } from "@/lib/verdikt-data"
