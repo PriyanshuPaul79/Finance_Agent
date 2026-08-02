@@ -10,6 +10,9 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 from graph.workflow import app as graph_app
 from tools.fundamentals import get_fundamentals
+from tools.ticker_utils import resolve_ticker_info
+from guardrails.input_guardrails import validate_ticker_input, validate_api_key_and_provider
+from guardrails.output_guardrails import apply_output_guardrails, clean_json_output
 
 app = FastAPI(title="Multi-Agent Financial Due Diligence API")
 
@@ -35,12 +38,14 @@ AGENT_NODE_MAP = {
     "FundamentalsAnalyst": "fundamentals",
     "SentimentAnalyst": "sentiment",
     "IndustryAnalyst": "industry",
+    "TechnicalAnalyst": "technical",
 }
 
 ANALYSIS_KEY_MAP = {
     "FundamentalsAnalyst": "fundamentals_analysis",
     "SentimentAnalyst": "sentiment_analysis",
     "IndustryAnalyst": "industry_analysis",
+    "TechnicalAnalyst": "technical_analysis",
 }
 
 
@@ -52,21 +57,21 @@ def extract_fundamentals(ticker: str) -> dict:
         fcf = "N/A"
         dte = "N/A"
 
-        r = re.search(r'Total Revenue:\s*\$\s*([\d,]+(?:\.\d+)?)', tool_data)
-        if r:
-            revenue = f"${float(r.group(1).replace(',', '')) / 1e9:.1f}B"
+        r = re.search(r'Total Revenue:\s*([^\n]+)', tool_data)
+        if r and r.group(1).strip() != "N/A":
+            revenue = r.group(1).strip()
 
-        r = re.search(r'Net Income:\s*\$\s*([\d,]+(?:\.\d+)?)', tool_data)
-        if r:
-            net_income = f"${float(r.group(1).replace(',', '')) / 1e9:.1f}B"
+        r = re.search(r'Net Income:\s*([^\n]+)', tool_data)
+        if r and r.group(1).strip() != "N/A":
+            net_income = r.group(1).strip()
 
-        r = re.search(r'Free Cash Flow:\s*\$\s*([\d,]+(?:\.\d+)?)', tool_data)
-        if r:
-            fcf = f"${float(r.group(1).replace(',', '')) / 1e9:.1f}B"
+        r = re.search(r'Free Cash Flow:\s*([^\n]+)', tool_data)
+        if r and r.group(1).strip() != "N/A":
+            fcf = r.group(1).strip()
 
-        r = re.search(r'Debt-to-Equity Ratio:\s*([\d.]+|N/A)', tool_data)
-        if r:
-            dte = r.group(1)
+        r = re.search(r'Debt-to-Equity Ratio:\s*([^\n]+)', tool_data)
+        if r and r.group(1).strip() != "N/A":
+            dte = r.group(1).strip()
 
         return {
             "revenue": revenue,
@@ -78,16 +83,14 @@ def extract_fundamentals(ticker: str) -> dict:
         return {"revenue": "N/A", "netIncome": "N/A", "freeCashFlow": "N/A", "debtToEquity": "N/A"}
 
 
-# Sentiment label → numeric score mapping.
-# Covers the typical phrases the Groq LLM produces.
-_SENTIMENT_SCORE_MAP = [
-    (r"strongly\s+positive|very\s+positive|highly\s+positive",          85),
-    (r"cautiously\s+positive|mildly\s+positive|slightly\s+positive",    40),
-    (r"positive",                                                        65),
-    (r"strongly\s+negative|very\s+negative|highly\s+negative",          -85),
-    (r"cautiously\s+negative|mildly\s+negative|slightly\s+negative",   -40),
-    (r"negative",                                                       -65),
-    (r"mixed|neutral",                                                    0),
+_SENTIMENT_PATTERNS = [
+    (r"\bstrongly\s+positive\b|\bvery\s+positive\b|\bhighly\s+positive\b|\bstrongly\s+bullish\b", 85),
+    (r"\bcautiously\s+positive\b|\bmildly\s+positive\b|\bslightly\s+positive\b|\bcautiously\s+bullish\b", 40),
+    (r"\bpositive\b|\bbullish\b", 65),
+    (r"\bstrongly\s+negative\b|\bvery\s+negative\b|\bhighly\s+negative\b|\bstrongly\s+bearish\b", -85),
+    (r"\bcautiously\s+negative\b|\bmildly\s+negative\b|\bslightly\s+negative\b|\bcautiously\s+bearish\b", -40),
+    (r"\bnegative\b|\bbearish\b", -65),
+    (r"\bmixed\b|\bneutral\b", 0),
 ]
 
 _LABEL_DISPLAY_MAP = {
@@ -102,23 +105,23 @@ _LABEL_DISPLAY_MAP = {
 
 
 def extract_sentiment(text: str) -> dict:
-    """Parse score and label out of the LLM's sentiment analysis text."""
     if not text:
-        return {"score": 0, "label": "Neutral"}
+        return {"score": 0, "label": "Mixed / Neutral"}
 
-    # Try to find the overall sentiment label.
-    # The LLM typically writes things like:
-    #   "overall sentiment for AAPL is **Negative**"
-    #   "The overall market sentiment is: Cautiously Positive"
-    #   "sentiment is mixed"
-    # We search the whole text (case-insensitive).
     text_lower = text.lower()
 
-    score = 0  # default neutral
-    label = "Neutral"
+    section = re.search(
+        r'\*\*overall sentiment\*\*[:\s]*(.+?)(?:\n\s*\*\*|$)',
+        text_lower,
+        re.DOTALL,
+    )
+    search_text = section.group(1) if section else text_lower
 
-    for pattern, s in _SENTIMENT_SCORE_MAP:
-        if re.search(pattern, text_lower):
+    score = 0
+    label = "Mixed / Neutral"
+
+    for pattern, s in _SENTIMENT_PATTERNS:
+        if re.search(pattern, search_text):
             score = s
             label = _LABEL_DISPLAY_MAP[s]
             break
@@ -127,15 +130,20 @@ def extract_sentiment(text: str) -> dict:
 
 
 def build_report(state: dict, ticker: str) -> dict:
+    stock, info, resolved_ticker = resolve_ticker_info(ticker)
+    company_name = info.get("longName") or info.get("shortName") or resolved_ticker
+    sector = info.get("sector") or info.get("industry") or "N/A"
+
     fund_data = extract_fundamentals(ticker)
 
     final_report_str = state.get("final_report", "")
     synthesis_data = {}
     if final_report_str:
+        cleaned_json = clean_json_output(final_report_str)
         try:
-            synthesis_data = json.loads(final_report_str)
+            synthesis_data = json.loads(cleaned_json)
         except json.JSONDecodeError:
-            match = re.search(r'\{.*\}', final_report_str, re.DOTALL)
+            match = re.search(r'\{.*\}', cleaned_json, re.DOTALL)
             if match:
                 try:
                     synthesis_data = json.loads(match.group(0))
@@ -148,11 +156,13 @@ def build_report(state: dict, ticker: str) -> dict:
     fundamentals_text = state.get("fundamentals_analysis", "")
     sentiment_text = state.get("sentiment_analysis", "")
     industry_text = state.get("industry_analysis", "")
+    technical_text = state.get("technical_analysis", "")
+    had_partial_failure = state.get("hadPartialFailure", False)
 
-    return {
-        "ticker": ticker,
-        "companyName": ticker,
-        "sector": "N/A",
+    raw_report = {
+        "ticker": resolved_ticker,
+        "companyName": company_name,
+        "sector": sector,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "verdict": {
             "signal": verdict.get("signal", "Hold"),
@@ -178,6 +188,9 @@ def build_report(state: dict, ticker: str) -> dict:
             "comparables": [],
             "summary": industry_text,
         },
+        "technical": {
+            "summary": technical_text,
+        },
         "synthesis": {
             "paragraphs": synthesis.get("paragraphs", [final_report_str]),
             "contributions": synthesis.get(
@@ -186,36 +199,27 @@ def build_report(state: dict, ticker: str) -> dict:
                     {"agent": "fundamentals", "weight": "Primary", "note": "Financial health assessment"},
                     {"agent": "sentiment", "weight": "Reinforcing", "note": "Market sentiment analysis"},
                     {"agent": "industry", "weight": "Calibrating", "note": "Industry positioning context"},
+                    {"agent": "technical", "weight": "Reinforcing", "note": "Technical indicators & price trends"},
                 ],
             ),
         },
-        "hadPartialFailure": False,
+        "hadPartialFailure": had_partial_failure,
     }
 
+    # Apply Output & Compliance Guardrails
+    return apply_output_guardrails(raw_report)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# The graph.stream() call is synchronous and blocks for several seconds per
-# node (LLM calls).  Running it directly inside an async generator starves
-# the asyncio event loop so no SSE bytes ever reach the browser until the
-# whole graph finishes.
-#
-# Fix: run the blocking loop in a thread-pool worker.  The worker puts events
-# onto a Queue; the async generator drains the queue with a small sleep so it
-# never blocks the loop.
-# ─────────────────────────────────────────────────────────────────────────────
 
-_SENTINEL = object()  # marks end-of-stream
+_SENTINEL = object()
 
 
 def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
-    """Runs graph_app.stream() in a background thread and pushes SSE dicts onto event_q."""
     ticker = initial_state["ticker"]
     full_state: dict = dict(initial_state)
 
     try:
         for output in graph_app.stream(initial_state):
             for node_name, state_update in output.items():
-                # merge into full_state so build_report has everything
                 for k, v in state_update.items():
                     full_state[k] = v
 
@@ -233,7 +237,6 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
                     if final_report:
                         lines = [l.strip() for l in final_report.split("\n") if l.strip()]
                         for line in lines[:30]:
-                            # Skip raw JSON structural lines — only emit readable prose
                             skip = (
                                 line.startswith("{") or line.startswith("}") or
                                 line.startswith("[") or line.startswith("]") or
@@ -267,39 +270,56 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
 
 @app.get("/")
 def read_root():
-    return {"status": "Multi-Agent DD System is running!"}
+    return {"status": "Multi-Agent DD System is running with Guardrails enabled!"}
 
 
 @app.post("/analyze")
 async def analyze_stock(req: AnalyzeRequest):
-    ticker = req.ticker.upper()
+    # 1. INPUT GUARDRAIL: Validate Ticker & Prompt Injection
+    is_valid_ticker, sanitized_ticker, ticker_err = validate_ticker_input(req.ticker)
+    if not is_valid_ticker:
+        async def err_generator():
+            yield sse("agent_error", {
+                "agent": "supervisor",
+                "note": f"Input Guardrail Violation: {ticker_err}",
+            })
+            yield sse("done", {"message": "Halted due to Guardrail violation."})
+        return EventSourceResponse(err_generator())
+
+    # 2. INPUT GUARDRAIL: Validate Provider & API Key Format
+    is_valid_key, key_err = validate_api_key_and_provider(req.llm_provider, req.api_key)
+    if not is_valid_key:
+        async def err_generator():
+            yield sse("agent_error", {
+                "agent": "supervisor",
+                "note": f"Key Guardrail Violation: {key_err}",
+            })
+            yield sse("done", {"message": "Halted due to Guardrail violation."})
+        return EventSourceResponse(err_generator())
 
     initial_state = {
-        "messages": [{"role": "user", "content": f"Analyze {ticker}"}],
-        "ticker": ticker,
-        "llm_provider": req.llm_provider,   
-        "api_key": req.api_key,
+        "messages": [{"role": "user", "content": f"Analyze {sanitized_ticker}"}],
+        "ticker": sanitized_ticker,
+        "llm_provider": req.llm_provider.strip().lower(),   
+        "api_key": req.api_key.strip(),
         "fundamentals_done": False,
         "sentiment_done": False,
         "industry_done": False,
+        "technical_done": False,
     }
 
     event_q: queue.Queue = queue.Queue()
 
     async def event_generator():
-        # Emit supervisor_start immediately so the UI updates right away
-        yield sse("supervisor_start", {"ticker": ticker})
+        yield sse("supervisor_start", {"ticker": sanitized_ticker})
 
-        # Launch the blocking graph in a thread so the event loop stays free
         loop = asyncio.get_event_loop()
         thread_future = loop.run_in_executor(None, _run_graph_sync, initial_state, event_q)
 
-        # Drain the queue asynchronously
         while True:
             try:
                 item = event_q.get_nowait()
             except queue.Empty:
-                # Nothing yet — yield control back to the event loop briefly
                 await asyncio.sleep(0.05)
                 continue
 
@@ -308,9 +328,7 @@ async def analyze_stock(req: AnalyzeRequest):
 
             yield item
 
-        # Make sure the thread is done
         await thread_future
-
         yield sse("done", {"message": "Analysis complete."})
 
     return EventSourceResponse(event_generator())
