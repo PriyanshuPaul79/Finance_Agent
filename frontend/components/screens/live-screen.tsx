@@ -1,5 +1,11 @@
 "use client"
 
+// Live screen: the in-progress view shown while the backend runs a multi-agent analysis. POSTs
+// ticker/provider/apiKey to http://localhost:8000/analyze and consumes the Server-Sent Events
+// stream, updating per-agent statuses (thinking/done), live log lines, the streaming terminal,
+// and the central PulseRing. On 'report_ready' it converts the backend payload via
+// convertBackendReportToAnalysis and calls onComplete; on failure it shows an error card with
+// a "Back to Search" action.
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Check, Loader2, AlertTriangle, Terminal, ArrowRight } from "lucide-react"
