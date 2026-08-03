@@ -4,10 +4,14 @@ import re
 import queue
 import asyncio
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
+
+load_dotenv()
+
 from graph.workflow import app as graph_app
 from tools.fundamentals import get_fundamentals
 from tools.technical import get_technical_data
