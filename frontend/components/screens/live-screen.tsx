@@ -1,7 +1,7 @@
 "use client"
 
 // Live screen: the in-progress view shown while the backend runs a multi-agent analysis. POSTs
-// ticker/provider/apiKey to http://localhost:8000/analyze and consumes the Server-Sent Events
+// ticker/provider/apiKey to https://vasu7-verdikt.hf.space/analyze and consumes the Server-Sent Events
 // stream, updating per-agent statuses (thinking/done), live log lines, the streaming terminal,
 // and the central PulseRing. On 'report_ready' it converts the backend payload via
 // convertBackendReportToAnalysis and calls onComplete; on failure it shows an error card with
@@ -54,7 +54,7 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
 
     async function streamAnalysis() {
       try {
-        const res = await fetch("http://localhost:8000/analyze", {
+        const res = await fetch("https://vasu7-verdikt.hf.space/analyze", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -165,7 +165,7 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
         }
       } catch (err: any) {
         if (err.name === "AbortError" || isCancelled) return
-        setErrorMessage(err.message || "Failed to connect to backend server at http://localhost:8000")
+        setErrorMessage(err.message || "Failed to connect to backend server at https://vasu7-verdikt.hf.space")
       }
     }
 
