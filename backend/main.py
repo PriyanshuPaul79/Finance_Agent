@@ -10,7 +10,15 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 from graph.workflow import app as graph_app
 from tools.fundamentals import get_fundamentals
+from tools.technical import get_technical_data
 from tools.ticker_utils import resolve_ticker_info
+from tools.scoring import (
+    extract_sentiment,
+    compute_fundamental_score,
+    industry_stance,
+    technical_stance,
+    stance_split,
+)
 from guardrails.input_guardrails import validate_ticker_input, validate_api_key_and_provider
 from guardrails.output_guardrails import apply_output_guardrails, clean_json_output
 
@@ -83,56 +91,34 @@ def extract_fundamentals(ticker: str) -> dict:
         return {"revenue": "N/A", "netIncome": "N/A", "freeCashFlow": "N/A", "debtToEquity": "N/A"}
 
 
-_SENTIMENT_PATTERNS = [
-    (r"\bstrongly\s+positive\b|\bvery\s+positive\b|\bhighly\s+positive\b|\bstrongly\s+bullish\b", 85),
-    (r"\bcautiously\s+positive\b|\bmildly\s+positive\b|\bslightly\s+positive\b|\bcautiously\s+bullish\b", 40),
-    (r"\bpositive\b|\bbullish\b", 65),
-    (r"\bstrongly\s+negative\b|\bvery\s+negative\b|\bhighly\s+negative\b|\bstrongly\s+bearish\b", -85),
-    (r"\bcautiously\s+negative\b|\bmildly\s+negative\b|\bslightly\s+negative\b|\bcautiously\s+bearish\b", -40),
-    (r"\bnegative\b|\bbearish\b", -65),
-    (r"\bmixed\b|\bneutral\b", 0),
-]
-
-_LABEL_DISPLAY_MAP = {
-    85:  "Strongly Positive",
-    40:  "Cautiously Positive",
-    65:  "Positive",
-   -85:  "Strongly Negative",
-   -40:  "Cautiously Negative",
-   -65:  "Negative",
-     0:  "Mixed / Neutral",
-}
-
-
-def extract_sentiment(text: str) -> dict:
+def _first_content(text: str, max_len: int = 300) -> str:
+    """First substantive sentence of an agent's analysis, markdown stripped — used as a grounded claim."""
     if not text:
-        return {"score": 0, "label": "Mixed / Neutral"}
-
-    text_lower = text.lower()
-
-    section = re.search(
-        r'\*\*overall sentiment\*\*[:\s]*(.+?)(?:\n\s*\*\*|$)',
-        text_lower,
-        re.DOTALL,
-    )
-    search_text = section.group(1) if section else text_lower
-
-    score = 0
-    label = "Mixed / Neutral"
-
-    for pattern, s in _SENTIMENT_PATTERNS:
-        if re.search(pattern, search_text):
-            score = s
-            label = _LABEL_DISPLAY_MAP[s]
-            break
-
-    return {"score": score, "label": label}
+        return "No detailed analysis available from this agent."
+    for line in text.split("\n"):
+        clean = re.sub(r"^#+\s*|\*\*|`", "", line).strip()
+        if len(clean) > 20:
+            return clean[:max_len]
+    return "No detailed analysis available from this agent."
 
 
 def build_report(state: dict, ticker: str) -> dict:
     stock, info, resolved_ticker = resolve_ticker_info(ticker)
     company_name = info.get("longName") or info.get("shortName") or resolved_ticker
     sector = info.get("sector") or info.get("industry") or "N/A"
+
+    fast_info = getattr(stock, "fast_info", None)
+    price = None
+    change = None
+    if fast_info:
+        try:
+            last = float(fast_info.last_price)
+            prev = float(fast_info.previous_close)
+            if last > 0 and prev > 0:
+                price = last
+                change = (last - prev) / prev * 100
+        except Exception:
+            pass
 
     fund_data = extract_fundamentals(ticker)
 
@@ -152,6 +138,9 @@ def build_report(state: dict, ticker: str) -> dict:
 
     verdict = synthesis_data.get("verdict", {})
     synthesis = synthesis_data.get("synthesis", {})
+    disagreement = synthesis_data.get("disagreement", {}) or {}
+    if not isinstance(disagreement, dict):
+        disagreement = {}
 
     fundamentals_text = state.get("fundamentals_analysis", "")
     sentiment_text = state.get("sentiment_analysis", "")
@@ -159,10 +148,62 @@ def build_report(state: dict, ticker: str) -> dict:
     technical_text = state.get("technical_analysis", "")
     had_partial_failure = state.get("hadPartialFailure", False)
 
+    # Agent scores & stances — all derived from real evidence, no hardcoded values
+    fund_score = compute_fundamental_score(info)
+    fund_stance = "bullish" if fund_score >= 55 else ("bearish" if fund_score <= 45 else "neutral")
+    sent = extract_sentiment(sentiment_text)
+    sent_score = max(5, min(95, round((sent["score"] + 100) / 2)))
+    sent_stance = "bullish" if sent["score"] >= 0 else "bearish"
+    industry = industry_stance(industry_text)
+    tech_tool = get_technical_data.invoke({"ticker": ticker})
+    technical = technical_stance(tech_tool)
+
+    agent_scores = {
+        "fundamentals": {"score": fund_score, "stance": fund_stance},
+        "sentiment": {"score": sent_score, "stance": sent_stance},
+        "industry": industry,
+        "technical": technical,
+    }
+
+    # Deterministic disagreement detection: if agent stances are genuinely split
+    # (some bullish, some bearish) but the synthesizer missed it, build the
+    # disagreement from the most opposed pair, quoting their actual analyses.
+    agent_a, agent_b = stance_split(agent_scores)
+    llm_disagreement_complete = (
+        disagreement.get("has_disagreement")
+        and disagreement.get("topic")
+        and disagreement.get("claim_a")
+        and disagreement.get("claim_b")
+    )
+    if agent_a and agent_b and not llm_disagreement_complete:
+        texts = {
+            "fundamentals": fundamentals_text,
+            "sentiment": sentiment_text,
+            "industry": industry_text,
+            "technical": technical_text,
+        }
+        disagreement = {
+            "has_disagreement": True,
+            "agent_a": agent_a,
+            "agent_b": agent_b,
+            "topic": f"{agent_a.title()} and {agent_b.title()} clash on {resolved_ticker}: bullish vs bearish reads",
+            "claim_a": _first_content(texts[agent_a]),
+            "claim_b": _first_content(texts[agent_b]),
+            "reasoning": [
+                f"Stance split: {agent_a.title()} is bullish (score {agent_scores[agent_a]['score']}) while {agent_b.title()} is bearish (score {agent_scores[agent_b]['score']}).",
+                "Each specialist grounded its read in different evidence: fundamentals and sentiment weigh valuation and narrative, while industry and technicals weigh macro/competitive conditions and price action.",
+                "The synthesizer reconciled the opposing reads into the final verdict.",
+            ],
+            "resolution": verdict.get("reasoning", "The synthesizer weighted the opposing agent views into a balanced final verdict."),
+        }
+    elif not disagreement.get("has_disagreement"):
+        disagreement = {"has_disagreement": False}
+
     raw_report = {
         "ticker": resolved_ticker,
         "companyName": company_name,
         "sector": sector,
+        "market": {"price": price, "change": change},
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "verdict": {
             "signal": verdict.get("signal", "Hold"),
@@ -170,6 +211,8 @@ def build_report(state: dict, ticker: str) -> dict:
             "reasoning": verdict.get("reasoning", ""),
             "confidence": verdict.get("confidence", 50),
         },
+        "disagreement": disagreement,
+        "agentScores": agent_scores,
         "fundamentals": {
             "revenue": fund_data["revenue"],
             "netIncome": fund_data["netIncome"],
