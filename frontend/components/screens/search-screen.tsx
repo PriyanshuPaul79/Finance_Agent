@@ -6,11 +6,17 @@
 // Submitting validates the key and calls onSelect(ticker, provider, apiKey) to kick off analysis.
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Search, TrendingUp, TrendingDown, CornerDownLeft, Key, ShieldCheck, Eye, EyeOff } from "lucide-react"
+import { Search, TrendingUp, TrendingDown, CornerDownLeft, Key, ShieldCheck, Eye, EyeOff, ExternalLink } from "lucide-react"
 import { TRENDING, searchTickers } from "@/lib/verdikt-data"
 
 interface SearchScreenProps {
   onSelect: (ticker: string, provider: string, apiKey: string) => void
+}
+
+const PROVIDER_KEY_URLS: Record<string, string> = {
+  groq: "https://console.groq.com/keys",
+  openai: "https://platform.openai.com/api-keys",
+  gemini: "https://aistudio.google.com/apikey",
 }
 
 export function SearchScreen({ onSelect }: SearchScreenProps) {
@@ -237,8 +243,17 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
           </div>
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate">
+            <label className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate">
               {provider.toUpperCase()} API Key
+              <a
+                href={PROVIDER_KEY_URLS[provider]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 normal-case tracking-normal text-signal hover:underline"
+              >
+                Get a {provider} key
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
             </label>
             <div className="relative">
               <input
