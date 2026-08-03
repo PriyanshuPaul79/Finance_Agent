@@ -6,13 +6,30 @@ Review the following specialist analyses for {ticker}:
 [Industry]: {industry_analysis}
 [Technical]: {technical_analysis}
 
+Agent stance signals (derived from each specialist's actual evidence):
+{agent_stances}
+
 Output ONLY valid JSON, no other text. Use this exact structure:
 {{
   "verdict": {{
     "signal": "Buy or Hold or Sell or Accumulate or Watch",
     "headline": "One-line headline summarizing the key finding",
     "reasoning": "1-2 sentences explaining the verdict",
-    "confidence": <number 0-100>
+    "confidence": 75
+  }},
+  "disagreement": {{
+    "has_disagreement": true,
+    "agent_a": "fundamentals",
+    "agent_b": "technical",
+    "topic": "Main topic of disagreement or debate between agents",
+    "claim_a": "Stance or argument from agent A",
+    "claim_b": "Stance or argument from agent B",
+    "reasoning": [
+      "Point of friction or key metric divergence",
+      "Analysis of how both stances differ",
+      "Context behind the clash"
+    ],
+    "resolution": "How the synthesizer reconciled the disagreement into the final verdict"
   }},
   "synthesis": {{
     "paragraphs": ["Executive summary paragraph", "Financial health paragraph", "Market sentiment paragraph", "Industry positioning paragraph", "Technical analysis paragraph", "Final recommendation paragraph"],
@@ -24,3 +41,11 @@ Output ONLY valid JSON, no other text. Use this exact structure:
     ]
   }}
 }}
+
+## Disagreement rules (strict)
+- The "disagreement" block is OPTIONAL. Include it ONLY when the specialists genuinely clashed on a material point — conflicting signals, divergent metrics, or opposing risk views — as evidenced by their actual analyses above.
+- The "Agent stance signals" list is authoritative: if it shows a real split (some agents bullish, some bearish), a genuine disagreement EXISTS — you MUST set "has_disagreement": true and write it up between the most opposed pair, grounding claim_a and claim_b in their actual stated arguments (do not invent stances they did not express).
+- When the agents broadly agree, or their differences are trivial (minor wording, same direction): set "has_disagreement": false and OMIT all other disagreement fields.
+- Never fabricate, exaggerate, or soften a disagreement that the stance signals do not support.
+
+
