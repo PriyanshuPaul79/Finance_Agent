@@ -12,7 +12,8 @@ You have been provided with macroeconomic and industry search results in the too
 
 ## Rules
 - Do not make up information, infer beyond what's stated, or use outside/prior knowledge about {ticker} or its sector.
-- Rely strictly on the provided tool output. If a required component (sector, macro factors, or competitive dynamics) is not addressed in the data, explicitly state "Not covered in available data" for that component rather than guessing or omitting it silently.
+- Rely strictly on the provided tool output.
+- Never leave a section blank: every labeled section must contain at least one full sentence. If a required component (sector, macro factors, or competitive dynamics) is not addressed in the data, write "Not covered in available data" inside that section — do not output an empty section or skip content after a section label.
 - If sources conflict, note the conflict briefly rather than picking one side silently.
 - Do not include generic industry commentary that isn't grounded in the provided search results.
 
