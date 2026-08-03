@@ -11,6 +11,7 @@ load_dotenv()
 from tools.fundamentals import get_fundamentals
 from tools.search import get_sentiment, get_industry_context
 from tools.technical import get_technical_data
+from tools.scoring import agent_stances
 from graph.state import DueDiligenceState
 from guardrails.execution_guardrails import circuit_breaker_node_wrapper
 from guardrails.output_guardrails import clean_json_output
@@ -30,7 +31,7 @@ def get_llm(provider: str, api_key: str):
         return ChatOpenAI(model="gpt-4o-mini", api_key=api_key, temperature=0)
         
     elif prov == "groq":
-        return ChatGroq(model="llama-3.3-70b-versatile", api_key=api_key, temperature=0)
+        return ChatGroq(model="openai/gpt-oss-20b", api_key=api_key, temperature=0)
         
     elif prov == "gemini":
         return ChatGoogleGenerativeAI(model="gemini-1.5-flash", api_key=api_key, temperature=0)
@@ -128,13 +129,19 @@ def _raw_technical_node(state: DueDiligenceState):
 
 def _raw_synthesis_node(state: DueDiligenceState):
     llm = get_llm(state["llm_provider"], state["api_key"])
-    
+
+    stances = agent_stances(state["ticker"], state)
+    stance_lines = "\n".join(
+        f"- {name}: {s['stance']} (score {s['score']})" for name, s in stances.items()
+    )
+
     prompt = load_prompt("synthesis.txt").format(
         ticker=state["ticker"],
         fundamentals_analysis=state.get("fundamentals_analysis", "N/A"),
         sentiment_analysis=state.get("sentiment_analysis", "N/A"),
         industry_analysis=state.get("industry_analysis", "N/A"),
         technical_analysis=state.get("technical_analysis", "N/A"),
+        agent_stances=stance_lines,
     )
     
     response = llm.invoke([SystemMessage(content=prompt)])
