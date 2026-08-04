@@ -39,14 +39,9 @@ The entire deliberation is streamed live to the frontend over Server-Sent Events
 
 ## Demo Video
 
-<!--
-  TODO: Upload your demo video and drop the link/embed here.
-  Suggested format:
+<video src="verdikt%20demo.mp4" controls style="max-width: 100%; border-radius: 8px"></video>
 
-  [![Watch the demo](https://img.youtube.com/vi/VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
--->
-
-*Demo video coming soon — it walks through: entering a ticker (e.g. `AAPL` or `RELIANCE`), watching the four agents deliberate live on the pulse ring, the agent-vs-agent disagreement view, and the final verdict report.*
+*It walks through: entering a ticker (e.g. `AAPL` or `RELIANCE`), watching the four agents deliberate live on the pulse ring, the agent-vs-agent disagreement view, and the final verdict report.*
 
 ---
 
