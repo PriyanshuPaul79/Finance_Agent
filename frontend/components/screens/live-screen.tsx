@@ -54,7 +54,8 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
 
     async function streamAnalysis() {
       try {
-        const res = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL + "/analyze", {
+        //const res = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL + "/analyze", {
+        const res = await fetch("http://localhost:8000/analyze", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
