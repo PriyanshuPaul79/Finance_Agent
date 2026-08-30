@@ -5,9 +5,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-
-load_dotenv()
-
 from tools.fundamentals import get_fundamentals
 from tools.search import get_sentiment, get_industry_context
 from tools.technical import get_technical_data
@@ -15,6 +12,9 @@ from tools.scoring import agent_stances
 from graph.state import DueDiligenceState
 from guardrails.execution_guardrails import circuit_breaker_node_wrapper
 from guardrails.output_guardrails import clean_json_output
+
+load_dotenv()
+
 
 # Load Prompts
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
@@ -34,7 +34,7 @@ def get_llm(provider: str, api_key: str):
         return ChatGroq(model="openai/gpt-oss-20b", api_key=api_key, temperature=0)
         
     elif prov == "gemini":
-        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", api_key=api_key, temperature=0)
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key=api_key, temperature=0)
         
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
@@ -144,7 +144,10 @@ def _raw_synthesis_node(state: DueDiligenceState):
         agent_stances=stance_lines,
     )
     
-    response = llm.invoke([SystemMessage(content=prompt)])
+    response = llm.invoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content="Synthesize the final verdict report now."),
+    ])
     cleaned_json = clean_json_output(response.content)
     
     return {

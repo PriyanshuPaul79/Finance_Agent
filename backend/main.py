@@ -126,6 +126,13 @@ def build_report(state: dict, ticker: str) -> dict:
 
     fund_data = extract_fundamentals(ticker)
 
+    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose") or 0
+    prev_close = info.get("previousClose")
+    change_percent = info.get("regularMarketChangePercent")
+    if change_percent is None and prev_close:
+        change_percent = ((price - prev_close) / prev_close) * 100 if prev_close else 0
+    change_percent = round((change_percent or 0), 2)
+
     final_report_str = state.get("final_report", "")
     synthesis_data = {}
     if final_report_str:
@@ -207,7 +214,10 @@ def build_report(state: dict, ticker: str) -> dict:
         "ticker": resolved_ticker,
         "companyName": company_name,
         "sector": sector,
-        "market": {"price": price, "change": change},
+        "market": {
+            "price": round(price, 2),
+            "change": change_percent,
+        },
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "verdict": {
             "signal": verdict.get("signal", "Hold"),
