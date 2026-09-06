@@ -4,6 +4,7 @@ import re
 import queue
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
@@ -13,6 +14,7 @@ from tools.fundamentals import get_fundamentals
 from tools.ticker_utils import resolve_ticker_info
 from guardrails.input_guardrails import validate_ticker_input, validate_api_key_and_provider
 from guardrails.output_guardrails import apply_output_guardrails, clean_json_output
+from tools.scoring import extract_sentiment, agent_stances, generate_disagreement_payload
 
 app = FastAPI(title="Multi-Agent Financial Due Diligence API")
 
@@ -28,6 +30,7 @@ class AnalyzeRequest(BaseModel):
     ticker: str
     llm_provider: str
     api_key: str
+    model: Optional[str] = None
 
 
 def sse(event_type: str, data: dict):
@@ -83,50 +86,12 @@ def extract_fundamentals(ticker: str) -> dict:
         return {"revenue": "N/A", "netIncome": "N/A", "freeCashFlow": "N/A", "debtToEquity": "N/A"}
 
 
-_SENTIMENT_PATTERNS = [
-    (r"\bstrongly\s+positive\b|\bvery\s+positive\b|\bhighly\s+positive\b|\bstrongly\s+bullish\b", 85),
-    (r"\bcautiously\s+positive\b|\bmildly\s+positive\b|\bslightly\s+positive\b|\bcautiously\s+bullish\b", 40),
-    (r"\bpositive\b|\bbullish\b", 65),
-    (r"\bstrongly\s+negative\b|\bvery\s+negative\b|\bhighly\s+negative\b|\bstrongly\s+bearish\b", -85),
-    (r"\bcautiously\s+negative\b|\bmildly\s+negative\b|\bslightly\s+negative\b|\bcautiously\s+bearish\b", -40),
-    (r"\bnegative\b|\bbearish\b", -65),
-    (r"\bmixed\b|\bneutral\b", 0),
-]
-
-_LABEL_DISPLAY_MAP = {
-    85:  "Strongly Positive",
-    40:  "Cautiously Positive",
-    65:  "Positive",
-   -85:  "Strongly Negative",
-   -40:  "Cautiously Negative",
-   -65:  "Negative",
-     0:  "Mixed / Neutral",
-}
-
-
-def extract_sentiment(text: str) -> dict:
-    if not text:
-        return {"score": 0, "label": "Mixed / Neutral"}
-
-    text_lower = text.lower()
-
-    section = re.search(
-        r'\*\*overall sentiment\*\*[:\s]*(.+?)(?:\n\s*\*\*|$)',
-        text_lower,
-        re.DOTALL,
-    )
-    search_text = section.group(1) if section else text_lower
-
-    score = 0
-    label = "Mixed / Neutral"
-
-    for pattern, s in _SENTIMENT_PATTERNS:
-        if re.search(pattern, search_text):
-            score = s
-            label = _LABEL_DISPLAY_MAP[s]
-            break
-
-    return {"score": score, "label": label}
+def _safe_str(val) -> str:
+    if isinstance(val, list):
+        return "\n".join(str(x) for x in val)
+    if val is None:
+        return ""
+    return str(val)
 
 
 def build_report(state: dict, ticker: str) -> dict:
@@ -143,7 +108,7 @@ def build_report(state: dict, ticker: str) -> dict:
         change_percent = ((price - prev_close) / prev_close) * 100 if prev_close else 0
     change_percent = round((change_percent or 0), 2)
 
-    final_report_str = state.get("final_report", "")
+    final_report_str = _safe_str(state.get("final_report", ""))
     synthesis_data = {}
     if final_report_str:
         cleaned_json = clean_json_output(final_report_str)
@@ -160,11 +125,17 @@ def build_report(state: dict, ticker: str) -> dict:
     verdict = synthesis_data.get("verdict", {})
     synthesis = synthesis_data.get("synthesis", {})
 
-    fundamentals_text = state.get("fundamentals_analysis", "")
-    sentiment_text = state.get("sentiment_analysis", "")
-    industry_text = state.get("industry_analysis", "")
-    technical_text = state.get("technical_analysis", "")
+    fundamentals_text = _safe_str(state.get("fundamentals_analysis", ""))
+    sentiment_text = _safe_str(state.get("sentiment_analysis", ""))
+    industry_text = _safe_str(state.get("industry_analysis", ""))
+    technical_text = _safe_str(state.get("technical_analysis", ""))
     had_partial_failure = state.get("hadPartialFailure", False)
+
+    # Compute agent stances and disagreement payload
+    agent_scores = agent_stances(ticker, state)
+    disagreement = synthesis_data.get("disagreement")
+    if not disagreement or not isinstance(disagreement, dict) or not disagreement.get("has_disagreement"):
+        disagreement = generate_disagreement_payload(agent_scores, state, resolved_ticker)
 
     raw_report = {
         "ticker": resolved_ticker,
@@ -181,6 +152,8 @@ def build_report(state: dict, ticker: str) -> dict:
             "reasoning": verdict.get("reasoning", ""),
             "confidence": verdict.get("confidence", 50),
         },
+        "agentScores": agent_scores,
+        "disagreement": disagreement,
         "fundamentals": {
             "revenue": fund_data["revenue"],
             "netIncome": fund_data["netIncome"],
@@ -244,7 +217,7 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
 
                 if node_name == "Synthesizer":
                     event_q.put(sse("synthesis_start", {}))
-                    final_report = state_update.get("final_report", "")
+                    final_report = _safe_str(state_update.get("final_report", ""))
                     if final_report:
                         lines = [l.strip() for l in final_report.split("\n") if l.strip()]
                         for line in lines[:30]:
@@ -260,7 +233,7 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
 
                 analysis_key = ANALYSIS_KEY_MAP.get(node_name)
                 if analysis_key:
-                    text = state_update.get(analysis_key, "")
+                    text = _safe_str(state_update.get(analysis_key, ""))
                     agent_id = AGENT_NODE_MAP[node_name]
                     lines = [l.strip() for l in text.split("\n") if l.strip()]
                     for line in lines:
@@ -308,11 +281,24 @@ async def analyze_stock(req: AnalyzeRequest):
             yield sse("done", {"message": "Halted due to Guardrail violation."})
         return EventSourceResponse(err_generator())
 
+    resolved_provider = req.llm_provider.strip().lower()
+    resolved_model = (req.model or "").strip()
+    if resolved_provider == "gemini":
+        if not resolved_model or resolved_model.startswith("gemini-1") or resolved_model.startswith("gemini-2"):
+            resolved_model = "gemini-3.7-flash"
+    elif resolved_provider == "groq":
+        if not resolved_model or "gpt-oss" not in resolved_model:
+            resolved_model = "openai/gpt-oss-120b"
+    elif resolved_provider == "openai":
+        if not resolved_model:
+            resolved_model = "gpt-4o-mini"
+
     initial_state = {
         "messages": [{"role": "user", "content": f"Analyze {sanitized_ticker}"}],
         "ticker": sanitized_ticker,
-        "llm_provider": req.llm_provider.strip().lower(),   
+        "llm_provider": resolved_provider,
         "api_key": req.api_key.strip(),
+        "model": resolved_model,
         "fundamentals_done": False,
         "sentiment_done": False,
         "industry_done": False,
