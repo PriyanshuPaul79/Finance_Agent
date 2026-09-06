@@ -5,16 +5,20 @@ import queue
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
+
+load_dotenv()
+
 from graph.workflow import app as graph_app
 from tools.fundamentals import get_fundamentals
 from tools.ticker_utils import resolve_ticker_info
+from tools.scoring import extract_sentiment, agent_stances, generate_disagreement_payload
 from guardrails.input_guardrails import validate_ticker_input, validate_api_key_and_provider
 from guardrails.output_guardrails import apply_output_guardrails, clean_json_output
-from tools.scoring import extract_sentiment, agent_stances, generate_disagreement_payload
 
 app = FastAPI(title="Multi-Agent Financial Due Diligence API")
 

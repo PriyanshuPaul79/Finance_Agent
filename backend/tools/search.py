@@ -1,4 +1,6 @@
 import time
+import os
+import json
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -6,6 +8,20 @@ from langchain_core.tools import tool
 import yfinance as yf
 from ddgs import DDGS
 from tools.ticker_utils import resolve_ticker_info
+
+FINNHUB_BASE = "https://finnhub.io/api/v1"
+
+def _finnhub_get(path: str, params: dict) -> dict:
+    api_key = os.getenv("FINNHUB_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("FINNHUB_API_KEY is not set in backend/.env")
+    url = f"{FINNHUB_BASE}{path}?{urllib.parse.urlencode({**params, 'token': api_key})}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
+    )
+    with urllib.request.urlopen(req, timeout=8) as response:
+        return json.loads(response.read().decode())
 
 def _fetch_google_news_rss(search_query: str) -> str:
     """Fetch recent news from Google News RSS feed."""
@@ -101,38 +117,97 @@ def get_sentiment(ticker: str) -> str:
 
     return f"No recent news found for {company_name} ({resolved_ticker})."
 
+def _profile_from_yfinance(ticker: str) -> dict:
+    """Fallback company profile from yfinance (free, no key)."""
+    stock, info, resolved = resolve_ticker_info(ticker)
+    return {
+        "name": info.get("longName") or info.get("shortName") or resolved,
+        "finnhubIndustry": info.get("sector") or info.get("industry") or "N/A",
+        "exchange": info.get("fullExchangeName") or "N/A",
+        "currency": info.get("currency") or "N/A",
+        "marketCapitalization": round(info.get("marketCap", 0) / 1e6, 1) if info.get("marketCap") else "N/A",
+    }
+
 @tool
 def get_industry_context(ticker: str) -> str:
     """
-    Fetches industry/sector classification, business summary, and market context for a stock.
+    Fetches industry/sector classification, business summary, and market context for a stock
+    (Finnhub company profile + web search, with yfinance profile fallback and Google News RSS).
     Use this to understand the company's competitive landscape.
     """
-    stock, info, resolved_ticker = resolve_ticker_info(ticker)
-    
-    sector = info.get("sector", "N/A")
-    industry = info.get("industry", "N/A")
-    summary = info.get("longBusinessSummary", "")
-    company_name = info.get("longName") or info.get("shortName") or resolved_ticker
-
-    if sector != "N/A" or summary:
-        return f"""
-Company: {company_name} ({resolved_ticker})
-Sector: {sector}
-Industry: {industry}
-
-Business & Sector Summary:
-{summary[:1000]}
-""".strip()
-
-    # Fallback to DuckDuckGo Search
     try:
-        ddgs = DDGS()
-        results = list(ddgs.text(f"{resolved_ticker} {company_name} company sector industry business profile", max_results=4))
-        if results:
-            snippets = [r.get("body", "") for r in results if r.get("body")]
-            summary_text = "\n".join(snippets)
-            return f"Industry/Sector Context for {company_name} ({resolved_ticker}):\n\nBusiness & Sector Overview:\n{summary_text[:1000]}"
+        try:
+            profile = _finnhub_get("/stock/profile2", {"symbol": ticker})
+            if not profile or profile.get("error") or not profile.get("name"):
+                raise ValueError("no profile")
+        except Exception:
+            profile = _profile_from_yfinance(ticker)
+
+        company_name = profile.get("name", ticker)
+        sector = profile.get("finnhubIndustry") or "N/A"
+        exchange = profile.get("exchange") or "N/A"
+        currency = profile.get("currency") or "N/A"
+        market_cap_usd_m = profile.get("marketCapitalization") or "N/A"
+
+        # Finnhub profile2 has no business description; get it via web search
+        summary = ""
+        try:
+            ddgs = DDGS()
+            results = list(ddgs.text(
+                f"{ticker} {company_name} company business profile sector industry",
+                max_results=4,
+            ))
+            summary = "\n".join(r.get("body", "") for r in results if r.get("body"))
+        except Exception:
+            summary = ""
+
+        # Recent industry & company news via Google News RSS (free, no key)
+        news = ""
+        try:
+            news = _fetch_google_news_rss(f"{company_name} {ticker} industry news")
+        except Exception:
+            news = ""
+
+        # Macro factors search so the industry agent has grounded material for the macro section
+        macro = ""
+        if sector != "N/A":
+            try:
+                ddgs = DDGS()
+                results = list(ddgs.text(
+                    f"{sector} sector outlook interest rates inflation regulation",
+                    max_results=3,
+                ))
+                macro = "\n".join(r.get("body", "") for r in results if r.get("body"))
+            except Exception:
+                macro = ""
+
+        # Competitor / competitive dynamics search
+        competitors = ""
+        try:
+            ddgs = DDGS()
+            results = list(ddgs.text(
+                f"{ticker} {company_name} main competitors market share competition",
+                max_results=3,
+            ))
+            competitors = "\n".join(r.get("body", "") for r in results if r.get("body"))
+        except Exception:
+            competitors = ""
+
+        text = f"""
+Company: {company_name} ({ticker})
+Sector: {sector}
+Exchange: {exchange}
+Currency: {currency}
+Market Cap (USD M): {market_cap_usd_m}
+"""
+        if summary:
+            text += f"\nBusiness & Sector Summary:\n{summary[:1000]}"
+        if news:
+            text += f"\n\nRecent Industry & Company News:\n{news}"
+        if macro:
+            text += f"\n\nMacro Factors:\n{macro[:800]}"
+        if competitors:
+            text += f"\n\nCompetitive Landscape:\n{competitors[:800]}"
+        return text.strip()
     except Exception as e:
         return f"Error fetching industry context for {ticker}: {str(e)}"
-
-    return f"Unable to fetch industry context for {ticker}."
