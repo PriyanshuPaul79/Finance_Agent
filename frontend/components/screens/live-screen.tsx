@@ -20,6 +20,7 @@ import { PulseRing, type AgentStatus } from "@/components/pulse-ring"
 interface LiveScreenProps {
   ticker: string
   provider: string
+  model?: string
   apiKey: string
   onComplete: (analysis: StockAnalysis) => void
   onError: (msg: string) => void
@@ -32,7 +33,7 @@ const INITIAL: Record<AgentId, AgentStatus> = {
   technical: "thinking",
 }
 
-export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: LiveScreenProps) {
+export function LiveScreen({ ticker, provider, model, apiKey, onComplete, onError }: LiveScreenProps) {
   const reduce = useReducedMotion()
   const [statuses, setStatuses] = useState<Record<AgentId, AgentStatus>>(INITIAL)
   const [logs, setLogs] = useState<Record<AgentId, string[]>>({
@@ -54,8 +55,8 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
 
     async function streamAnalysis() {
       try {
-        //const res = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL + "/analyze", {
-        const res = await fetch("http://localhost:8000/analyze", {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+        const res = await fetch(`${backendUrl}/analyze`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -64,6 +65,7 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
             ticker,
             llm_provider: provider,
             api_key: apiKey,
+            model: model || undefined,
           }),
           signal: abortController.signal,
         })
@@ -166,7 +168,7 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
         }
       } catch (err: any) {
         if (err.name === "AbortError" || isCancelled) return
-        setErrorMessage(err.message || "Failed to connect to backend server at https://vasu7-verdikt.hf.space")
+        setErrorMessage(err.message || `Failed to connect to backend server at ${backendUrl}`)
       }
     }
 
@@ -176,7 +178,7 @@ export function LiveScreen({ ticker, provider, apiKey, onComplete, onError }: Li
       isCancelled = true
       abortController.abort()
     }
-  }, [ticker, provider, apiKey, onComplete])
+  }, [ticker, provider, model, apiKey, onComplete])
 
   const doneCount = AGENTS.filter((a) => statuses[a.id] === "done").length
 
