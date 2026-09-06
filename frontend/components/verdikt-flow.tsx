@@ -14,12 +14,14 @@ export function VerdiktFlow() {
   const [stage, setStage] = useState<Stage>("search")
   const [activeTicker, setActiveTicker] = useState<string>("")
   const [activeProvider, setActiveProvider] = useState<string>("groq")
+  const [activeModel, setActiveModel] = useState<string>("")
   const [activeKey, setActiveKey] = useState<string>("")
   const [analysis, setAnalysis] = useState<StockAnalysis | null>(null)
 
-  const startAnalysis = useCallback((ticker: string, provider: string, apiKey: string) => {
+  const startAnalysis = useCallback((ticker: string, provider: string, apiKey: string, model?: string) => {
     setActiveTicker(ticker)
     setActiveProvider(provider)
+    setActiveModel(model || "")
     setActiveKey(apiKey)
     setStage("live")
   }, [])
@@ -65,6 +67,7 @@ export function VerdiktFlow() {
             <LiveScreen
               ticker={activeTicker}
               provider={activeProvider}
+              model={activeModel}
               apiKey={activeKey}
               onComplete={onAnalysisComplete}
               onError={onError}
