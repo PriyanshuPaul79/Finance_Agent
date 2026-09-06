@@ -10,7 +10,7 @@ import { Search, TrendingUp, TrendingDown, CornerDownLeft, Key, ShieldCheck, Eye
 import { TRENDING, searchTickers } from "@/lib/verdikt-data"
 
 interface SearchScreenProps {
-  onSelect: (ticker: string, provider: string, apiKey: string) => void
+  onSelect: (ticker: string, provider: string, apiKey: string, model: string) => void
 }
 
 const PROVIDER_KEY_URLS: Record<string, string> = {
@@ -19,12 +19,31 @@ const PROVIDER_KEY_URLS: Record<string, string> = {
   gemini: "https://aistudio.google.com/apikey",
 }
 
+export const PROVIDER_MODELS: Record<string, { id: string; name: string; badge?: string }[]> = {
+  groq: [
+    { id: "openai/gpt-oss-120b", name: "GPT OSS 120B", badge: "Recommended" },
+    { id: "openai/gpt-oss-20b", name: "GPT OSS 20B" },
+  ],
+  gemini: [
+    { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", badge: "Recommended" },
+    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+    { id: "gemini-3.0-pro", name: "Gemini 3.0 Pro" },
+    { id: "gemini-3.0-flash", name: "Gemini 3.0 Flash" },
+  ],
+  openai: [
+    { id: "gpt-4o-mini", name: "GPT-4o Mini", badge: "Recommended" },
+    { id: "gpt-4o", name: "GPT-4o (Flagship)" },
+    { id: "o3-mini", name: "o3-mini (Reasoning)" },
+  ],
+}
+
 export function SearchScreen({ onSelect }: SearchScreenProps) {
   const reduce = useReducedMotion()
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const [provider, setProvider] = useState("groq")
+  const [model, setModel] = useState("openai/gpt-oss-120b")
   const [apiKey, setApiKey] = useState("")
   const [showKey, setShowKey] = useState(false)
   const [errorMsg, setErrorMsg] = useState("")
@@ -32,14 +51,35 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
 
   useEffect(() => {
     const savedProvider = localStorage.getItem("verdikt_llm_provider") || "groq"
+    const validModels = PROVIDER_MODELS[savedProvider] || PROVIDER_MODELS.groq
+    const defaultModel = validModels[0]?.id || "openai/gpt-oss-120b"
+    let savedModel = localStorage.getItem("verdikt_model") || defaultModel
+    if (savedProvider === "gemini" && (savedModel.startsWith("gemini-1") || savedModel.startsWith("gemini-2"))) {
+      savedModel = "gemini-3.7-flash"
+    } else if (savedProvider === "groq" && !savedModel.includes("gpt-oss")) {
+      savedModel = "openai/gpt-oss-120b"
+    }
+    const activeModel = validModels.some((m) => m.id === savedModel) ? savedModel : defaultModel
     const savedKey = localStorage.getItem("verdikt_api_key") || ""
+
     setProvider(savedProvider)
+    setModel(activeModel)
+    localStorage.setItem("verdikt_model", activeModel)
     setApiKey(savedKey)
   }, [])
 
   function handleProviderChange(val: string) {
     setProvider(val)
     localStorage.setItem("verdikt_llm_provider", val)
+    const validModels = PROVIDER_MODELS[val] || []
+    const newModel = validModels[0]?.id || ""
+    setModel(newModel)
+    localStorage.setItem("verdikt_model", newModel)
+  }
+
+  function handleModelChange(val: string) {
+    setModel(val)
+    localStorage.setItem("verdikt_model", val)
   }
 
   function handleKeyChange(val: string) {
@@ -58,7 +98,7 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
       return
     }
     setErrorMsg("")
-    onSelect(ticker.toUpperCase(), provider, keyToUse)
+    onSelect(ticker.toUpperCase(), provider, keyToUse, model)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -228,7 +268,7 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
           )}
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate">Provider</label>
             <select
@@ -236,9 +276,24 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
               onChange={(e) => handleProviderChange(e.target.value)}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:border-signal focus:outline-none"
             >
-              <option value="groq">Groq (Recommended)</option>
-              <option value="openai">OpenAI (GPT-4o-mini)</option>
+              <option value="groq">Groq</option>
               <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate">Model</label>
+            <select
+              value={model}
+              onChange={(e) => handleModelChange(e.target.value)}
+              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:border-signal focus:outline-none"
+            >
+              {(PROVIDER_MODELS[provider] || []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.badge ? `(${m.badge})` : ""}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -251,7 +306,7 @@ export function SearchScreen({ onSelect }: SearchScreenProps) {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 normal-case tracking-normal text-signal hover:underline"
               >
-                Get a {provider} key
+                Get a {provider === "gemini" ? "Gemini" : provider} key
                 <ExternalLink className="h-3 w-3" aria-hidden="true" />
               </a>
             </label>
