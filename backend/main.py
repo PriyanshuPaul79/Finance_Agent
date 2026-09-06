@@ -4,6 +4,7 @@ import re
 import queue
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,15 +15,8 @@ load_dotenv()
 
 from graph.workflow import app as graph_app
 from tools.fundamentals import get_fundamentals
-from tools.technical import get_technical_data
 from tools.ticker_utils import resolve_ticker_info
-from tools.scoring import (
-    extract_sentiment,
-    compute_fundamental_score,
-    industry_stance,
-    technical_stance,
-    stance_split,
-)
+from tools.scoring import extract_sentiment, agent_stances, generate_disagreement_payload
 from guardrails.input_guardrails import validate_ticker_input, validate_api_key_and_provider
 from guardrails.output_guardrails import apply_output_guardrails, clean_json_output
 
@@ -40,6 +34,7 @@ class AnalyzeRequest(BaseModel):
     ticker: str
     llm_provider: str
     api_key: str
+    model: Optional[str] = None
 
 
 def sse(event_type: str, data: dict):
@@ -95,34 +90,18 @@ def extract_fundamentals(ticker: str) -> dict:
         return {"revenue": "N/A", "netIncome": "N/A", "freeCashFlow": "N/A", "debtToEquity": "N/A"}
 
 
-def _first_content(text: str, max_len: int = 300) -> str:
-    """First substantive sentence of an agent's analysis, markdown stripped — used as a grounded claim."""
-    if not text:
-        return "No detailed analysis available from this agent."
-    for line in text.split("\n"):
-        clean = re.sub(r"^#+\s*|\*\*|`", "", line).strip()
-        if len(clean) > 20:
-            return clean[:max_len]
-    return "No detailed analysis available from this agent."
+def _safe_str(val) -> str:
+    if isinstance(val, list):
+        return "\n".join(str(x) for x in val)
+    if val is None:
+        return ""
+    return str(val)
 
 
 def build_report(state: dict, ticker: str) -> dict:
     stock, info, resolved_ticker = resolve_ticker_info(ticker)
     company_name = info.get("longName") or info.get("shortName") or resolved_ticker
     sector = info.get("sector") or info.get("industry") or "N/A"
-
-    fast_info = getattr(stock, "fast_info", None)
-    price = None
-    change = None
-    if fast_info:
-        try:
-            last = float(fast_info.last_price)
-            prev = float(fast_info.previous_close)
-            if last > 0 and prev > 0:
-                price = last
-                change = (last - prev) / prev * 100
-        except Exception:
-            pass
 
     fund_data = extract_fundamentals(ticker)
 
@@ -133,7 +112,7 @@ def build_report(state: dict, ticker: str) -> dict:
         change_percent = ((price - prev_close) / prev_close) * 100 if prev_close else 0
     change_percent = round((change_percent or 0), 2)
 
-    final_report_str = state.get("final_report", "")
+    final_report_str = _safe_str(state.get("final_report", ""))
     synthesis_data = {}
     if final_report_str:
         cleaned_json = clean_json_output(final_report_str)
@@ -149,66 +128,18 @@ def build_report(state: dict, ticker: str) -> dict:
 
     verdict = synthesis_data.get("verdict", {})
     synthesis = synthesis_data.get("synthesis", {})
-    disagreement = synthesis_data.get("disagreement", {}) or {}
-    if not isinstance(disagreement, dict):
-        disagreement = {}
 
-    fundamentals_text = state.get("fundamentals_analysis", "")
-    sentiment_text = state.get("sentiment_analysis", "")
-    industry_text = state.get("industry_analysis", "")
-    technical_text = state.get("technical_analysis", "")
+    fundamentals_text = _safe_str(state.get("fundamentals_analysis", ""))
+    sentiment_text = _safe_str(state.get("sentiment_analysis", ""))
+    industry_text = _safe_str(state.get("industry_analysis", ""))
+    technical_text = _safe_str(state.get("technical_analysis", ""))
     had_partial_failure = state.get("hadPartialFailure", False)
 
-    # Agent scores & stances — all derived from real evidence, no hardcoded values
-    fund_score = compute_fundamental_score(info)
-    fund_stance = "bullish" if fund_score >= 55 else ("bearish" if fund_score <= 45 else "neutral")
-    sent = extract_sentiment(sentiment_text)
-    sent_score = max(5, min(95, round((sent["score"] + 100) / 2)))
-    sent_stance = "bullish" if sent["score"] >= 0 else "bearish"
-    industry = industry_stance(industry_text)
-    tech_tool = get_technical_data.invoke({"ticker": ticker})
-    technical = technical_stance(tech_tool)
-
-    agent_scores = {
-        "fundamentals": {"score": fund_score, "stance": fund_stance},
-        "sentiment": {"score": sent_score, "stance": sent_stance},
-        "industry": industry,
-        "technical": technical,
-    }
-
-    # Deterministic disagreement detection: if agent stances are genuinely split
-    # (some bullish, some bearish) but the synthesizer missed it, build the
-    # disagreement from the most opposed pair, quoting their actual analyses.
-    agent_a, agent_b = stance_split(agent_scores)
-    llm_disagreement_complete = (
-        disagreement.get("has_disagreement")
-        and disagreement.get("topic")
-        and disagreement.get("claim_a")
-        and disagreement.get("claim_b")
-    )
-    if agent_a and agent_b and not llm_disagreement_complete:
-        texts = {
-            "fundamentals": fundamentals_text,
-            "sentiment": sentiment_text,
-            "industry": industry_text,
-            "technical": technical_text,
-        }
-        disagreement = {
-            "has_disagreement": True,
-            "agent_a": agent_a,
-            "agent_b": agent_b,
-            "topic": f"{agent_a.title()} and {agent_b.title()} clash on {resolved_ticker}: bullish vs bearish reads",
-            "claim_a": _first_content(texts[agent_a]),
-            "claim_b": _first_content(texts[agent_b]),
-            "reasoning": [
-                f"Stance split: {agent_a.title()} is bullish (score {agent_scores[agent_a]['score']}) while {agent_b.title()} is bearish (score {agent_scores[agent_b]['score']}).",
-                "Each specialist grounded its read in different evidence: fundamentals and sentiment weigh valuation and narrative, while industry and technicals weigh macro/competitive conditions and price action.",
-                "The synthesizer reconciled the opposing reads into the final verdict.",
-            ],
-            "resolution": verdict.get("reasoning", "The synthesizer weighted the opposing agent views into a balanced final verdict."),
-        }
-    elif not disagreement.get("has_disagreement"):
-        disagreement = {"has_disagreement": False}
+    # Compute agent stances and disagreement payload
+    agent_scores = agent_stances(ticker, state)
+    disagreement = synthesis_data.get("disagreement")
+    if not disagreement or not isinstance(disagreement, dict) or not disagreement.get("has_disagreement"):
+        disagreement = generate_disagreement_payload(agent_scores, state, resolved_ticker)
 
     raw_report = {
         "ticker": resolved_ticker,
@@ -225,8 +156,8 @@ def build_report(state: dict, ticker: str) -> dict:
             "reasoning": verdict.get("reasoning", ""),
             "confidence": verdict.get("confidence", 50),
         },
-        "disagreement": disagreement,
         "agentScores": agent_scores,
+        "disagreement": disagreement,
         "fundamentals": {
             "revenue": fund_data["revenue"],
             "netIncome": fund_data["netIncome"],
@@ -290,7 +221,7 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
 
                 if node_name == "Synthesizer":
                     event_q.put(sse("synthesis_start", {}))
-                    final_report = state_update.get("final_report", "")
+                    final_report = _safe_str(state_update.get("final_report", ""))
                     if final_report:
                         lines = [l.strip() for l in final_report.split("\n") if l.strip()]
                         for line in lines[:30]:
@@ -306,7 +237,7 @@ def _run_graph_sync(initial_state: dict, event_q: queue.Queue):
 
                 analysis_key = ANALYSIS_KEY_MAP.get(node_name)
                 if analysis_key:
-                    text = state_update.get(analysis_key, "")
+                    text = _safe_str(state_update.get(analysis_key, ""))
                     agent_id = AGENT_NODE_MAP[node_name]
                     lines = [l.strip() for l in text.split("\n") if l.strip()]
                     for line in lines:
@@ -354,11 +285,24 @@ async def analyze_stock(req: AnalyzeRequest):
             yield sse("done", {"message": "Halted due to Guardrail violation."})
         return EventSourceResponse(err_generator())
 
+    resolved_provider = req.llm_provider.strip().lower()
+    resolved_model = (req.model or "").strip()
+    if resolved_provider == "gemini":
+        if not resolved_model or resolved_model.startswith("gemini-1") or resolved_model.startswith("gemini-2"):
+            resolved_model = "gemini-3.7-flash"
+    elif resolved_provider == "groq":
+        if not resolved_model or "gpt-oss" not in resolved_model:
+            resolved_model = "openai/gpt-oss-120b"
+    elif resolved_provider == "openai":
+        if not resolved_model:
+            resolved_model = "gpt-4o-mini"
+
     initial_state = {
         "messages": [{"role": "user", "content": f"Analyze {sanitized_ticker}"}],
         "ticker": sanitized_ticker,
-        "llm_provider": req.llm_provider.strip().lower(),   
+        "llm_provider": resolved_provider,
         "api_key": req.api_key.strip(),
+        "model": resolved_model,
         "fundamentals_done": False,
         "sentiment_done": False,
         "industry_done": False,

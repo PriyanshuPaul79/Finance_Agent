@@ -19,11 +19,16 @@ FINANCIAL_DISCLAIMER_TEXT = (
     "Always consult a licensed financial advisor before making investment decisions."
 )
 
-def sanitize_compliance_claims(text: str) -> str:
+def sanitize_compliance_claims(text) -> str:
     """
     Scans LLM output text for non-compliant financial claims (e.g. guaranteed profits)
     and replaces them with compliant risk-aware language.
     """
+    if isinstance(text, list):
+        text = "\n".join(str(x) for x in text)
+    elif not isinstance(text, str):
+        text = str(text) if text is not None else ""
+
     if not text:
         return text
 
@@ -33,11 +38,16 @@ def sanitize_compliance_claims(text: str) -> str:
 
     return sanitized
 
-def clean_json_output(raw_text: str) -> str:
+def clean_json_output(raw_text) -> str:
     """
     Strips Markdown code block formatting (```json ... ```) and leading/trailing
     conversational text to extract clean JSON strings.
     """
+    if isinstance(raw_text, list):
+        raw_text = "\n".join(str(x) for x in raw_text)
+    elif not isinstance(raw_text, str):
+        raw_text = str(raw_text) if raw_text is not None else ""
+
     if not raw_text:
         return "{}"
 

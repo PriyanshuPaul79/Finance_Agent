@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Optional
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
@@ -22,20 +23,47 @@ def load_prompt(name):
     with open(os.path.join(PROMPTS_DIR, name), 'r') as f:
         return f.read()
 
+_DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",
+    "groq": "openai/gpt-oss-120b",
+    "gemini": "gemini-3.7-flash",
+}
+
+def _resolve_gemini_model(model: Optional[str]) -> str:
+    m = (model or "").strip()
+    # Reject 1.x and 2.x models and use Gemini 3.x
+    if not m or m.startswith("gemini-1") or m.startswith("gemini-2") or "flash" in m and not m.startswith("gemini-3"):
+        return "gemini-3.7-flash"
+    return m
+
+def _resolve_groq_model(model: Optional[str]) -> str:
+    m = (model or "").strip()
+    if m in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"):
+        return m
+    if m in ("gpt-oss-120b", "120b"):
+        return "openai/gpt-oss-120b"
+    if m in ("gpt-oss-20b", "20b"):
+        return "openai/gpt-oss-20b"
+    return "openai/gpt-oss-120b"
+
 # --- HELPER: INITIALIZE LLM DYNAMICALLY ---
-def get_llm(provider: str, api_key: str):
-    """Initializes the correct LLM based on user's provider and key."""
+def get_llm(provider: str, api_key: str, model: Optional[str] = None):
+    """Initializes the correct LLM based on user's provider, key, and model."""
     prov = (provider or "").lower().strip()
-    
+    raw_model = (model or "").strip()
+    resolved_model = raw_model or _DEFAULT_MODELS.get(prov, "gpt-4o-mini")
+
     if prov == "openai":
-        return ChatOpenAI(model="gpt-4o-mini", api_key=api_key, temperature=0)
-        
+        return ChatOpenAI(model=resolved_model, api_key=api_key, temperature=0)
+
     elif prov == "groq":
-        return ChatGroq(model="openai/gpt-oss-20b", api_key=api_key, temperature=0)
-        
+        resolved_model = _resolve_groq_model(resolved_model)
+        return ChatGroq(model=resolved_model, api_key=api_key, temperature=0)
+
     elif prov == "gemini":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key=api_key, temperature=0)
-        
+        resolved_model = _resolve_gemini_model(resolved_model)
+        return ChatGoogleGenerativeAI(model=resolved_model, api_key=api_key, google_api_key=api_key, temperature=0)
+
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
@@ -58,77 +86,104 @@ def supervisor_node(state: DueDiligenceState):
         "next_agent": next_agent
     }
 
+def _format_content(content) -> str:
+    """Safely extracts string content from LLM response which may be a list of strings/dicts/parts or a string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                if "text" in part:
+                    parts.append(str(part["text"]))
+                elif "content" in part:
+                    parts.append(str(part["content"]))
+                else:
+                    parts.append(str(part))
+            elif hasattr(part, "text"):
+                parts.append(str(getattr(part, "text")))
+            else:
+                parts.append(str(part))
+        return "\n".join(parts)
+    return str(content) if content is not None else ""
+
 # --- UNWRAPPED WORKER NODES ---
 def _raw_fundamentals_node(state: DueDiligenceState):
     ticker = state["ticker"]
     tool_data = get_fundamentals.invoke({"ticker": ticker})
-    llm = get_llm(state["llm_provider"], state["api_key"])
-    
+    llm = get_llm(state["llm_provider"], state["api_key"], state["model"])
+
     prompt = load_prompt("fundamentals_analyst.txt").format(ticker=ticker)
     response = llm.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw Tool Data:\n{tool_data}")
     ])
+    content = _format_content(response.content)
     
     return {
-        "fundamentals_analysis": response.content,
+        "fundamentals_analysis": content,
         "fundamentals_done": True,
-        "messages": [HumanMessage(content=f"Fundamentals Analyst: {response.content}")]
+        "messages": [HumanMessage(content=f"Fundamentals Analyst: {content}")]
     }
 
 def _raw_sentiment_node(state: DueDiligenceState):
     ticker = state["ticker"]
     tool_data = get_sentiment.invoke({"ticker": ticker})
-    llm = get_llm(state["llm_provider"], state["api_key"])
-    
+    llm = get_llm(state["llm_provider"], state["api_key"], state["model"])
+
     prompt = load_prompt("sentiment_analyst.txt").format(ticker=ticker)
     response = llm.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw Tool Data:\n{tool_data}")
     ])
+    content = _format_content(response.content)
     
     return {
-        "sentiment_analysis": response.content,
+        "sentiment_analysis": content,
         "sentiment_done": True,
-        "messages": [HumanMessage(content=f"Sentiment Analyst: {response.content}")]
+        "messages": [HumanMessage(content=f"Sentiment Analyst: {content}")]
     }
 
 def _raw_industry_node(state: DueDiligenceState):
     ticker = state["ticker"]
     tool_data = get_industry_context.invoke({"ticker": ticker})
-    llm = get_llm(state["llm_provider"], state["api_key"])
-    
+    llm = get_llm(state["llm_provider"], state["api_key"], state["model"])
+
     prompt = load_prompt("industry_analyst.txt").format(ticker=ticker)
     response = llm.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw Tool Data:\n{tool_data}")
     ])
+    content = _format_content(response.content)
     
     return {
-        "industry_analysis": response.content,
+        "industry_analysis": content,
         "industry_done": True,
-        "messages": [HumanMessage(content=f"Industry Analyst: {response.content}")]
+        "messages": [HumanMessage(content=f"Industry Analyst: {content}")]
     }
 
 def _raw_technical_node(state: DueDiligenceState):
     ticker = state["ticker"]
     tool_data = get_technical_data.invoke({"ticker": ticker})
-    llm = get_llm(state["llm_provider"], state["api_key"])
+    llm = get_llm(state["llm_provider"], state["api_key"], state["model"])
 
     prompt = load_prompt("technical_analyst.txt").format(ticker=ticker)
     response = llm.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw Tool Data:\n{tool_data}")
     ])
+    content = _format_content(response.content)
 
     return {
-        "technical_analysis": response.content,
+        "technical_analysis": content,
         "technical_done": True,
-        "messages": [HumanMessage(content=f"Technical Analyst: {response.content}")]
+        "messages": [HumanMessage(content=f"Technical Analyst: {content}")]
     }
 
 def _raw_synthesis_node(state: DueDiligenceState):
-    llm = get_llm(state["llm_provider"], state["api_key"])
+    llm = get_llm(state["llm_provider"], state["api_key"], state["model"])
 
     stances = agent_stances(state["ticker"], state)
     stance_lines = "\n".join(
@@ -148,7 +203,8 @@ def _raw_synthesis_node(state: DueDiligenceState):
         SystemMessage(content=prompt),
         HumanMessage(content="Synthesize the final verdict report now."),
     ])
-    cleaned_json = clean_json_output(response.content)
+    content = _format_content(response.content)
+    cleaned_json = clean_json_output(content)
     
     return {
         "final_report": cleaned_json,
